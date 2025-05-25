@@ -1,0 +1,22 @@
+name: Build
+run-name: ${{ github.actor }} compiling based on CMakeLists.txt
+on: [push]
+jobs:
+  compile_on_ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build Tests
+        run: |
+          cmake -H. -B_build -DBUILD_TESTS=ON -DBUILD_COVERAGE=ON
+          cmake --build _build
+          cmake --build _build --target test -- ARGS=--verbose
+      - name: Generate and send a code coverage report to Coveralls
+        uses: threeal/gcovr-action@v1.0.0
+        with:
+          excludes: third-party
+          coveralls-send: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
