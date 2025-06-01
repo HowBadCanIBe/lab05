@@ -37,7 +37,6 @@ TEST(Account, RealBehavior) {
   
   EXPECT_THROW(acc.ChangeBalance(100), std::runtime_error);
   
-  // Тест повторной блокировки
   acc.Lock();
   EXPECT_THROW(acc.Lock(), std::runtime_error);
   acc.Unlock();
@@ -95,4 +94,33 @@ TEST(Transaction, FeeTest) {
   
   bool result = transaction.Make(from_acc, to_acc, 150);
   EXPECT_FALSE(result);
+}
+
+
+TEST(Transaction, CallOrder) {
+  MockAccount from_acc(1, 2000);
+  MockAccount to_acc(2, 1000);
+  MockTransaction transaction;
+  
+  InSequence seq;
+  
+  EXPECT_CALL(from_acc, Lock());
+  EXPECT_CALL(to_acc, Lock());
+  EXPECT_CALL(to_acc, ChangeBalance(500));
+  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(2000));
+  EXPECT_CALL(from_acc, ChangeBalance(-501));
+  EXPECT_CALL(transaction, SaveToDataBase(_, _, 500));
+  EXPECT_CALL(from_acc, Unlock());
+  EXPECT_CALL(to_acc, Unlock());
+  
+  transaction.Make(from_acc, to_acc, 500);
+}
+
+TEST(Account, EqualityOperator) {
+  Account acc1(1, 1000);
+  Account acc2(1, 2000);
+  Account acc3(2, 1000);
+  
+  EXPECT_TRUE(acc1 == acc2);
+  EXPECT_FALSE(acc1 == acc3);
 }
