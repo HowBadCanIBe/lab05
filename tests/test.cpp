@@ -4,10 +4,13 @@
 #include "Transaction.h"
 #include <gmock/gmock.h>
 
+using ::testing::AtLeast;
+using ::testing::_;
+using ::testing::Return;
+using ::testing::Throw;
+using ::testing::InSequence;
+
 class MockAccount : public Account {
- private:
-  int id;
-  int balance;
  public:
   MockAccount(int id, int balance) : Account(id, balance) {}
   MOCK_METHOD(int, GetBalance, (), (const, override));
@@ -22,57 +25,74 @@ class MockTransaction : public Transaction {
   MOCK_METHOD(void, SaveToDataBase, (Account& from, Account& to, int sum), (override));
 };
 
-using ::testing::AtLeast;
-
-TEST(Account, Mock) {
-  MockAccount ac1(1, 1000);
-  EXPECT_CALL(ac1, GetBalance()).Times(AtLeast(1));
-  std::cout <<  ac1.GetBalance() << std::endl;
-  EXPECT_CALL(ac1, Lock()).Times(AtLeast(1));
-  ac1.Lock();
-  EXPECT_CALL(ac1, ChangeBalance(1)).Times(AtLeast(1));
-  ac1.ChangeBalance(1);
-  EXPECT_CALL(ac1, Unlock()).Times(AtLeast(1));
-  ac1.Unlock();
+TEST(Account, RealBehavior) {
+  Account acc(1, 1000);
+  EXPECT_EQ(1000, acc.GetBalance());
+  EXPECT_EQ(1, acc.id());
   
+  acc.Lock();
+  acc.ChangeBalance(500);
+  EXPECT_EQ(1500, acc.GetBalance());
+  acc.Unlock();
+  
+  EXPECT_THROW(acc.ChangeBalance(100), std::runtime_error);
+  
+  // Тест повторной блокировки
+  acc.Lock();
+  EXPECT_THROW(acc.Lock(), std::runtime_error);
+  acc.Unlock();
 }
 
-TEST(Transaction, Mock) {
-  Account ac1(1, 10000);
-  Account ac2(2, 10000);
-  MockTransaction t1;
-  EXPECT_CALL(t1, SaveToDataBase(ac1, ac2, 1999)).Times(AtLeast(1));
-  t1.Make(ac1, ac2, 1999);
+TEST(Transaction, MockInteraction) {
+  MockAccount from_acc(1, 2000);
+  MockAccount to_acc(2, 1000);
+  MockTransaction transaction;
   
+  EXPECT_CALL(from_acc, Lock()).Times(1);
+  EXPECT_CALL(to_acc, Lock()).Times(1);
+  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(2000));
+  EXPECT_CALL(to_acc, ChangeBalance(500)).Times(1);
+  EXPECT_CALL(from_acc, ChangeBalance(-501)).Times(1);
+  EXPECT_CALL(transaction, SaveToDataBase(_, _, 500)).Times(1);
+  EXPECT_CALL(from_acc, Unlock()).Times(1);
+  EXPECT_CALL(to_acc, Unlock()).Times(1);
   
+  bool result = transaction.Make(from_acc, to_acc, 500);
+  EXPECT_TRUE(result);
 }
 
-TEST(Account, Methods) {
-  Account ac1(1, 1000);
-  EXPECT_EQ(1000, ac1.GetBalance());
-  ac1.Lock();
-  ac1.ChangeBalance(2000);
-  ac1.Unlock();
-  EXPECT_EQ(3000, ac1.GetBalance());
-  try {
-    ac1.ChangeBalance(1);
-  }
-  catch (std::runtime_error& el) {}
-  EXPECT_EQ(3000, ac1.GetBalance());
+TEST(Transaction, InsufficientFunds) {
+  MockAccount from_acc(1, 100);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  bool result = transaction.Make(from_acc, to_acc, 500);
+  EXPECT_FALSE(result);
 }
 
-TEST(Transaction, Methods) {
-  Account ac1(1, 10000);
-  Account ac2(2, 10000);
-  Transaction t1;
-  Transaction t2; t2.set_fee(500);
-  try {t1.Make(ac1, ac1, 100); EXPECT_EQ(1, 0);}
-  catch (std::logic_error& el) {}
-  try {t1.Make(ac1, ac2, -100); EXPECT_EQ(1, 0);}
-  catch (std::invalid_argument& el) {}
-  try {t1.Make(ac1, ac2, 0); EXPECT_EQ(1, 0);}
-  catch (std::logic_error& el) {}
-  EXPECT_EQ(false, t2.Make(ac1, ac2, 200));
-  t1.Make(ac1, ac2, 1999);
-  EXPECT_EQ(ac1.GetBalance(), 8000); EXPECT_EQ(ac2.GetBalance(), 11999);
+TEST(Transaction, RealBehavior) {
+  Account from_acc(1, 2000);
+  Account to_acc(2, 1000);
+  Transaction transaction;
+  
+  bool result = transaction.Make(from_acc, to_acc, 500);
+  EXPECT_TRUE(result);
+  EXPECT_EQ(1499, from_acc.GetBalance());
+  EXPECT_EQ(1500, to_acc.GetBalance());
+  
+  EXPECT_THROW(transaction.Make(from_acc, from_acc, 100), std::logic_error);
+  EXPECT_THROW(transaction.Make(from_acc, to_acc, -100), std::invalid_argument);
+  EXPECT_THROW(transaction.Make(from_acc, to_acc, 50), std::logic_error);
+}
+
+TEST(Transaction, FeeTest) {
+  Account from_acc(1, 1000);
+  Account to_acc(2, 1000);
+  Transaction transaction;
+  
+  transaction.set_fee(100);
+  EXPECT_EQ(100, transaction.fee());
+  
+  bool result = transaction.Make(from_acc, to_acc, 150);
+  EXPECT_FALSE(result);
 }
