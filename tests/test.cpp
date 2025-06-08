@@ -45,7 +45,7 @@ TEST(Transaction, Mock) {
   t1.Make(ac1, ac2, 1999);
   
   
-}
+} //test
 
 TEST(Account, Methods) {
   Account ac1(1, 1000);
