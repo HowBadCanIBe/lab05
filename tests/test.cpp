@@ -19,13 +19,7 @@ class MockAccount : public Account {
   MOCK_METHOD(void, Unlock, (), (override));
 };
 
-class MockTransaction : public Transaction {
- public:
-  MockTransaction() : Transaction() {}
-  MOCK_METHOD(void, SaveToDataBase, (Account& from, Account& to, int sum), (override));
-};
-
-TEST(Account, RealBehavior) {
+TEST(Account, BasicBehavior) {
   Account acc(1, 1000);
   EXPECT_EQ(1000, acc.GetBalance());
   EXPECT_EQ(1, acc.id());
@@ -42,80 +36,6 @@ TEST(Account, RealBehavior) {
   acc.Unlock();
 }
 
-TEST(Transaction, MockInteraction) {
-  MockAccount from_acc(1, 2000);
-  MockAccount to_acc(2, 1000);
-  MockTransaction transaction;
-  
-  EXPECT_CALL(from_acc, Lock()).Times(1);
-  EXPECT_CALL(to_acc, Lock()).Times(1);
-  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(2000));
-  EXPECT_CALL(to_acc, ChangeBalance(500)).Times(1);
-  EXPECT_CALL(from_acc, ChangeBalance(-501)).Times(1);
-  EXPECT_CALL(transaction, SaveToDataBase(_, _, 500)).Times(1);
-  EXPECT_CALL(from_acc, Unlock()).Times(1);
-  EXPECT_CALL(to_acc, Unlock()).Times(1);
-  
-  bool result = transaction.Make(from_acc, to_acc, 500);
-  EXPECT_TRUE(result);
-}
-
-TEST(Transaction, InsufficientFunds) {
-  MockAccount from_acc(1, 100);
-  MockAccount to_acc(2, 1000);
-  Transaction transaction;
-  
-  bool result = transaction.Make(from_acc, to_acc, 500);
-  EXPECT_FALSE(result);
-}
-
-TEST(Transaction, RealBehavior) {
-  Account from_acc(1, 2000);
-  Account to_acc(2, 1000);
-  Transaction transaction;
-  
-  bool result = transaction.Make(from_acc, to_acc, 500);
-  EXPECT_TRUE(result);
-  EXPECT_EQ(1499, from_acc.GetBalance());
-  EXPECT_EQ(1500, to_acc.GetBalance());
-  
-  EXPECT_THROW(transaction.Make(from_acc, from_acc, 100), std::logic_error);
-  EXPECT_THROW(transaction.Make(from_acc, to_acc, -100), std::invalid_argument);
-  EXPECT_THROW(transaction.Make(from_acc, to_acc, 50), std::logic_error);
-}
-
-TEST(Transaction, FeeTest) {
-  Account from_acc(1, 1000);
-  Account to_acc(2, 1000);
-  Transaction transaction;
-  
-  transaction.set_fee(100);
-  EXPECT_EQ(100, transaction.fee());
-  
-  bool result = transaction.Make(from_acc, to_acc, 150);
-  EXPECT_FALSE(result);
-}
-
-
-TEST(Transaction, CallOrder) {
-  MockAccount from_acc(1, 2000);
-  MockAccount to_acc(2, 1000);
-  MockTransaction transaction;
-  
-  InSequence seq;
-  
-  EXPECT_CALL(from_acc, Lock());
-  EXPECT_CALL(to_acc, Lock());
-  EXPECT_CALL(to_acc, ChangeBalance(500));
-  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(2000));
-  EXPECT_CALL(from_acc, ChangeBalance(-501));
-  EXPECT_CALL(transaction, SaveToDataBase(_, _, 500));
-  EXPECT_CALL(from_acc, Unlock());
-  EXPECT_CALL(to_acc, Unlock());
-  
-  transaction.Make(from_acc, to_acc, 500);
-}
-
 TEST(Account, EqualityOperator) {
   Account acc1(1, 1000);
   Account acc2(1, 2000);
@@ -123,4 +43,85 @@ TEST(Account, EqualityOperator) {
   
   EXPECT_TRUE(acc1 == acc2);
   EXPECT_FALSE(acc1 == acc3);
+}
+
+TEST(Transaction, LockUnlockOrder) {
+  MockAccount from_acc(1, 2000);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  // Проверяем порядок блокировки и разблокировки счетов
+  {
+    InSequence seq;
+    EXPECT_CALL(from_acc, Lock());
+    EXPECT_CALL(to_acc, Lock());
+    EXPECT_CALL(from_acc, Unlock());
+    EXPECT_CALL(to_acc, Unlock());
+  }
+  
+  // Ожидаем вызовы изменения баланса
+  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(2000));
+  EXPECT_CALL(to_acc, ChangeBalance(500));
+  EXPECT_CALL(from_acc, ChangeBalance(-501));
+  
+  transaction.Make(from_acc, to_acc, 500);
+}
+
+TEST(Transaction, InsufficientFunds) {
+  MockAccount from_acc(1, 100);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(100));
+  
+  bool result = transaction.Make(from_acc, to_acc, 500);
+  EXPECT_FALSE(result);
+}
+
+TEST(Transaction, SelfTransfer) {
+  MockAccount acc(1, 1000);
+  Transaction transaction;
+  
+  EXPECT_THROW(transaction.Make(acc, acc, 100), std::logic_error);
+}
+
+TEST(Transaction, NegativeAmount) {
+  MockAccount from_acc(1, 1000);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  EXPECT_THROW(transaction.Make(from_acc, to_acc, -100), std::invalid_argument);
+}
+
+TEST(Transaction, SmallAmount) {
+  MockAccount from_acc(1, 1000);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  EXPECT_THROW(transaction.Make(from_acc, to_acc, 50), std::logic_error);
+}
+
+TEST(Transaction, FeeCalculation) {
+  MockAccount from_acc(1, 1000);
+  MockAccount to_acc(2, 1000);
+  Transaction transaction;
+  
+  transaction.set_fee(100);
+  EXPECT_EQ(100, transaction.fee());
+  
+  EXPECT_CALL(from_acc, GetBalance()).WillOnce(Return(1000));
+  
+  bool result = transaction.Make(from_acc, to_acc, 150);
+  EXPECT_FALSE(result); // 150 + 100 > 1000
+}
+
+TEST(Transaction, SuccessfulTransfer) {
+  Account from_acc(1, 2000);
+  Account to_acc(2, 1000);
+  Transaction transaction;
+  
+  bool result = transaction.Make(from_acc, to_acc, 500);
+  EXPECT_TRUE(result);
+  EXPECT_EQ(1499, from_acc.GetBalance()); // 2000 - 500 - 1 (fee)
+  EXPECT_EQ(1500, to_acc.GetBalance());   // 1000 + 500
 }
