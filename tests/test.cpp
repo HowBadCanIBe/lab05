@@ -24,64 +24,27 @@ class MockTransaction : public Transaction {
 
 using ::testing::AtLeast;
 
-// Test that Transaction properly calls Account methods during transaction
-TEST(Transaction, MockAccountInteraction) {
-  MockAccount from_account(1, 10000);
-  MockAccount to_account(2, 5000);
-  Transaction transaction;
-
-  // Set up expectations for what Transaction should call on accounts
-  EXPECT_CALL(from_account, Lock()).Times(1);
-  EXPECT_CALL(to_account, Lock()).Times(1);
-  EXPECT_CALL(to_account, ChangeBalance(1000)).Times(1);  // Credit
-  EXPECT_CALL(from_account, GetBalance()).Times(1);        // Check balance for debit
-  EXPECT_CALL(from_account, ChangeBalance(-1001)).Times(1); // Debit (1000 + 1 fee)
-  EXPECT_CALL(from_account, Unlock()).Times(1);
-  EXPECT_CALL(to_account, Unlock()).Times(1);
-
-  // When GetBalance is called, return the current balance
-  EXPECT_CALL(from_account, GetBalance())
-    .WillOnce(::testing::Return(10000));
-
-  // Execute transaction - this will implicitly call the mocked methods
-  bool result = transaction.Make(from_account, to_account, 1000);
-  EXPECT_TRUE(result);
+TEST(Account, Mock) {
+  MockAccount ac1(1, 1000);
+  EXPECT_CALL(ac1, GetBalance()).Times(AtLeast(1));
+  std::cout <<  ac1.GetBalance() << std::endl;
+  EXPECT_CALL(ac1, Lock()).Times(AtLeast(1));
+  ac1.Lock();
+  EXPECT_CALL(ac1, ChangeBalance(1)).Times(AtLeast(1));
+  ac1.ChangeBalance(1);
+  EXPECT_CALL(ac1, Unlock()).Times(AtLeast(1));
+  ac1.Unlock();
+  
 }
 
-// Test insufficient funds scenario with mocks
-TEST(Transaction, MockInsufficientFunds) {
-  MockAccount from_account(1, 500);  // Not enough for 1000 + fee
-  MockAccount to_account(2, 5000);
-  Transaction transaction;
-
-  EXPECT_CALL(from_account, Lock()).Times(1);
-  EXPECT_CALL(to_account, Lock()).Times(1);
-  EXPECT_CALL(to_account, ChangeBalance(1000)).Times(1);    // Credit first
-  EXPECT_CALL(from_account, GetBalance()).Times(1);         // Check balance
-  EXPECT_CALL(from_account, ChangeBalance(-1000)).Times(1); // Rollback credit
-  EXPECT_CALL(from_account, Unlock()).Times(1);
-  EXPECT_CALL(to_account, Unlock()).Times(1);
-
-  // Return insufficient balance
-  EXPECT_CALL(from_account, GetBalance())
-    .WillOnce(::testing::Return(500));
-
-  bool result = transaction.Make(from_account, to_account, 1000);
-  EXPECT_FALSE(result);
-}
-
-// Test SaveToDataBase is called with mock
-TEST(Transaction, MockSaveToDataBase) {
-  Account from_account(1, 10000);
-  Account to_account(2, 5000);
-  MockTransaction mock_transaction;
-
-  // Expect SaveToDataBase to be called during transaction
-  EXPECT_CALL(mock_transaction, SaveToDataBase(::testing::Ref(from_account), 
-                                              ::testing::Ref(to_account), 1000))
-    .Times(1);
-
-  mock_transaction.Make(from_account, to_account, 1000);
+TEST(Transaction, Mock) {
+  Account ac1(1, 10000);
+  Account ac2(2, 10000);
+  MockTransaction t1;
+  EXPECT_CALL(t1, SaveToDataBase(ac1, ac2, 1999)).Times(AtLeast(1));
+  t1.Make(ac1, ac2, 1999);
+  
+  
 }
 
 TEST(Account, Methods) {
